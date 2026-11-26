@@ -16,7 +16,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.0.1-spike"
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     // PUBLIC dev key (committed on purpose) so every CI build can update the previous install.

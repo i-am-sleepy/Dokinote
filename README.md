@@ -6,7 +6,7 @@ An offline-first, open-source Android PDF reader and editor. Goal: feature parit
 
 ## Decisions
 - Engine: [MuPDF](https://mupdf.com) (AGPL-3.0). The whole app is licensed **AGPL-3.0-or-later**.
-- UI: Kotlin + Jetpack Compose (Material 3), Android only. minSdk 29 (Android 10), targetSdk 36 (Android 16).
+- UI: Kotlin + Jetpack Compose (Material 3), Android only. minSdk 29 (Android 10), targetSdk 36 (Android 16). Native ABI: arm64-v8a only (32-bit ARM and x86 dropped).
 - No network permission in the app. No analytics, ads, accounts or paywall.
 - Cloud storage works through the Android document picker (Drive, Dropbox, OneDrive, Nextcloud apps), not through SDKs.
 

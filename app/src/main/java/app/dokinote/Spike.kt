@@ -2,6 +2,7 @@ package app.dokinote
 
 import android.app.ActivityManager
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Debug
@@ -13,6 +14,7 @@ import com.artifex.mupdf.fitz.DocumentWriter
 import com.artifex.mupdf.fitz.Matrix
 import com.artifex.mupdf.fitz.PDFAnnotation
 import com.artifex.mupdf.fitz.PDFPage
+import com.artifex.mupdf.fitz.Rect
 import com.artifex.mupdf.fitz.android.AndroidDrawDevice
 import java.io.File
 import kotlin.concurrent.thread
@@ -112,29 +114,33 @@ fun benchmark(ctx: Context, uri: Uri, log: (String) -> Unit) {
     log("text extraction ${picks.size} pages: ${fmt(ms(tt))} ms total, $chars chars")
 
     val cores = Runtime.getRuntime().availableProcessors()
-    for (w in listOf(1, 2, 4).filter { it <= cores }) {
-        val t = System.nanoTime()
-        val ths = (0 until w).map { k ->
-            thread(name = "par-$k") {
-                try {
-                    val d = Document.openDocument(f.absolutePath) // one Document per worker
-                    if (d.isReflowable()) d.layout(595f, 842f, 11f)
-                    for ((idx, i) in picks.withIndex()) {
-                        if (idx % w == k) {
-                            val p = d.loadPage(i)
-                            AndroidDrawDevice.drawPageFitWidth(p, 1080).recycle()
-                            p.destroy()
+    for (aa in listOf(8, 4)) {
+        MuContext.setAntiAliasLevel(aa)
+        for (w in listOf(1, 2, 4).filter { it <= cores }) {
+            val t = System.nanoTime()
+            val ths = (0 until w).map { k ->
+                thread(name = "par-$k") {
+                    try {
+                        val d = Document.openDocument(f.absolutePath) // one Document per worker
+                        if (d.isReflowable()) d.layout(595f, 842f, 11f)
+                        for ((idx, i) in picks.withIndex()) {
+                            if (idx % w == k) {
+                                val p = d.loadPage(i)
+                                AndroidDrawDevice.drawPageFitWidth(p, 1080).recycle()
+                                p.destroy()
+                            }
                         }
+                        d.destroy()
+                    } catch (e: Throwable) {
+                        log("!! worker $k failed: $e")
                     }
-                    d.destroy()
-                } catch (e: Throwable) {
-                    log("!! worker $k failed: $e")
                 }
             }
+            ths.forEach { it.join() }
+            log("parallel AA=$aa x$w (own Document per worker): ${fmt(ms(t))} ms wall for ${picks.size} pages, includes opens")
         }
-        ths.forEach { it.join() }
-        log("parallel x$w (own Document per worker): ${fmt(ms(t))} ms wall for ${picks.size} pages, includes opens")
     }
+    MuContext.setAntiAliasLevel(8)
     log("native heap now: ${Debug.getNativeHeapAllocatedSize() / (1024 * 1024)} MB")
     doc.destroy()
 }
@@ -191,59 +197,105 @@ fun openAndConvert(ctx: Context, uri: Uri, log: (String) -> Unit) {
     doc.destroy()
 }
 
+private fun regionLum(bmp: Bitmap, r: Rect, ox: Float, oy: Float): Double {
+    val x0 = maxOf(0, (r.x0 - ox).toInt())
+    val y0 = maxOf(0, (r.y0 - oy).toInt())
+    val x1 = minOf(bmp.width, (r.x1 - ox).toInt() + 1)
+    val y1 = minOf(bmp.height, (r.y1 - oy).toInt() + 1)
+    if (x1 <= x0 || y1 <= y0) return -1.0
+    val w = x1 - x0
+    val h = y1 - y0
+    val px = IntArray(w * h)
+    bmp.getPixels(px, 0, w, x0, y0, w, h)
+    var sum = 0.0
+    for (c in px) sum += (((c shr 16) and 255) + ((c shr 8) and 255) + (c and 255)) / 3.0
+    return sum / px.size
+}
+
 fun redactionTest(ctx: Context, uri: Uri, needle: String, log: (String) -> Unit) {
     if (needle.isBlank()) { log("Type the word to redact first (it never leaves the device)."); return }
     val f = copyToCache(ctx, uri)
-    log("== Redaction: ${f.name} | word length ${needle.length}")
+    log("== Redaction: ${f.name} (${f.length() / 1024} KB) | word length ${needle.length}")
     val doc = Document.openDocument(f.absolutePath)
     if (!doc.isPDF()) { log("not a PDF: skipped"); doc.destroy(); return }
     val pdf = doc.asPDF()
-    val total = pdf.countPages()
-    var target = -1
-    var before = 0
-    for (i in 0 until minOf(total, 300)) {
-        val p = pdf.loadPage(i)
-        val hits = p.search(needle).size
-        p.destroy()
-        before += hits
-        if (hits > 0 && target < 0) target = i
-    }
-    log("hits before (first ${minOf(total, 300)} pages): $before | first on page index $target")
-    if (target < 0) { log("word not found: nothing to redact"); pdf.destroy(); return }
+    val limit = minOf(pdf.countPages(), 300)
 
-    val page = pdf.loadPage(target) as PDFPage
-    val charsBefore = page.toStructuredText().let { val c = it.asText().length; it.destroy(); c }
-    for (hit in page.search(needle)) {
-        for (q in hit) {
-            val a = page.createAnnotation(PDFAnnotation.TYPE_REDACT)
-            a.setRect(q.toRect())
-            a.update()
-            a.destroy()
-        }
+    val hitPages = ArrayList<Int>()
+    var before = 0
+    for (i in 0 until limit) {
+        val p = pdf.loadPage(i)
+        val h = p.search(needle).size
+        p.destroy()
+        if (h > 0) { hitPages.add(i); before += h }
     }
-    val applied = page.applyRedactions(true, PDFPage.REDACT_IMAGE_PIXELS, PDFPage.REDACT_LINE_ART_NONE, PDFPage.REDACT_TEXT_REMOVE)
-    page.update()
-    page.destroy()
+    log("hits before (first $limit pages): $before on ${hitPages.size} page(s)")
+    if (hitPages.isEmpty()) { log("word not found: nothing to redact"); pdf.destroy(); return }
+
+    // Visual probe: brightness of the first hit's area before redaction.
+    val probePage = hitPages[0]
+    var probeRect: Rect? = null
+    var originX = 0f
+    var originY = 0f
+    var lumBefore = -1.0
+    run {
+        val p = pdf.loadPage(probePage)
+        val b = p.getBounds()
+        originX = b.x0
+        originY = b.y0
+        probeRect = p.search(needle)[0][0].toRect()
+        val bmp = AndroidDrawDevice.drawPage(p, Matrix(1f))
+        lumBefore = regionLum(bmp, probeRect!!, originX, originY)
+        bmp.recycle()
+        p.destroy()
+    }
+
+    var applied = true
+    var boxes = 0
+    val tr = System.nanoTime()
+    for (i in hitPages) {
+        val page = pdf.loadPage(i) as PDFPage
+        for (hit in page.search(needle)) {
+            for (q in hit) {
+                val a = page.createAnnotation(PDFAnnotation.TYPE_REDACT)
+                a.setRect(q.toRect())
+                a.update()
+                a.destroy()
+                boxes++
+            }
+        }
+        applied = page.applyRedactions(true, PDFPage.REDACT_IMAGE_PIXELS, PDFPage.REDACT_LINE_ART_NONE, PDFPage.REDACT_TEXT_REMOVE) && applied
+        page.update()
+        page.destroy()
+    }
     val out = File(ctx.cacheDir, "redacted.pdf")
     pdf.save(out.absolutePath, "garbage=compact,compress")
-    log("applyRedactions returned $applied | saved ${out.length() / 1024} KB")
+    log("redacted $boxes box(es) on ${hitPages.size} page(s) in ${fmt(ms(tr))} ms | applyRedactions all true: $applied | ${f.length() / 1024} KB -> ${out.length() / 1024} KB")
     pdf.destroy()
 
     val d2 = Document.openDocument(out.absolutePath)
     var after = 0
-    for (i in 0 until minOf(d2.countPages(), 300)) {
+    var stillInText = 0
+    for (i in 0 until minOf(d2.countPages(), limit)) {
         val p = d2.loadPage(i)
         after += p.search(needle).size
+        if (i in hitPages) {
+            val st = p.toStructuredText()
+            if (st.asText().contains(needle, ignoreCase = true)) stillInText++
+            st.destroy()
+        }
         p.destroy()
     }
-    val pg = d2.loadPage(target)
-    val st = pg.toStructuredText()
-    val text = st.asText()
-    val stillInText = text.contains(needle, ignoreCase = true)
-    st.destroy()
-    pg.destroy()
+    var lumAfter = -1.0
+    run {
+        val p = d2.loadPage(probePage)
+        val bmp = AndroidDrawDevice.drawPage(p, Matrix(1f))
+        lumAfter = regionLum(bmp, probeRect!!, originX, originY)
+        bmp.recycle()
+        p.destroy()
+    }
     d2.destroy()
-    log("hits after: $after | still in extracted text of that page: $stillInText")
-    log("page text chars: $charsBefore -> ${text.length} (other text should remain)")
-    log(if (after == 0 && !stillInText) "RESULT: PASS (word removed from text layer)" else "RESULT: FAIL (word still present)")
+    log("hits after: $after | redacted pages whose text still contains the word: $stillInText")
+    log("first hit area brightness (0=black, 255=white): ${fmt(lumBefore)} -> ${fmt(lumAfter)}")
+    log(if (after == 0 && stillInText == 0) "RESULT: PASS (word gone from text layer on every page)" else "RESULT: FAIL (word still present)")
 }
