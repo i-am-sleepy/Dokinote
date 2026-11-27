@@ -20,3 +20,4 @@ dependencyResolutionManagement {
 rootProject.name = "Dokinote"
 include(":pdf-app")
 include(":office-app")
+include(":pdf-engine")

@@ -51,5 +51,5 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
-    implementation(libs.mupdf.fitz)
+    implementation(project(":pdf-engine")) // exposes MuPDF via api()
 }
