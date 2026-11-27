@@ -1,0 +1,144 @@
+run: 45991770798  branch: track/pdf-notes  sha: 11fb33089b574918e56c7797bc793aefba29c307  status: success
+-----
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :pdf-engine:preBuild UP-TO-DATE
+> Task :pdf-app:preBuild UP-TO-DATE
+> Task :office-app:preBuild UP-TO-DATE
+> Task :office-app:preDebugBuild UP-TO-DATE
+> Task :pdf-app:preDebugBuild UP-TO-DATE
+> Task :pdf-engine:preDebugBuild UP-TO-DATE
+> Task :pdf-app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :office-app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :pdf-app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :office-app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :pdf-app:generateDebugResValues
+> Task :pdf-engine:writeDebugAarMetadata
+> Task :pdf-app:generateDebugResources
+> Task :pdf-engine:processDebugNavigationResources
+> Task :pdf-engine:generateDebugResValues FROM-CACHE
+> Task :pdf-engine:generateDebugResources
+> Task :pdf-engine:packageDebugResources
+> Task :pdf-engine:extractDeepLinksDebug
+> Task :pdf-engine:processDebugManifest
+> Task :office-app:checkDebugAarMetadata
+> Task :office-app:processDebugNavigationResources
+> Task :pdf-engine:compileDebugLibraryResources
+> Task :office-app:generateDebugResValues FROM-CACHE
+> Task :office-app:compileDebugNavigationResources
+> Task :pdf-app:checkDebugAarMetadata
+> Task :office-app:mapDebugSourceSetPaths
+> Task :pdf-app:processDebugNavigationResources
+> Task :pdf-app:compileDebugNavigationResources FROM-CACHE
+> Task :office-app:generateDebugResources
+> Task :pdf-app:mapDebugSourceSetPaths
+> Task :pdf-engine:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :pdf-engine:javaPreCompileDebug
+> Task :pdf-engine:mergeDebugShaders
+> Task :pdf-engine:compileDebugShaders NO-SOURCE
+> Task :pdf-engine:generateDebugAssets UP-TO-DATE
+> Task :pdf-engine:mergeDebugAssets
+> Task :pdf-engine:mergeDebugJniLibFolders
+> Task :pdf-engine:mergeDebugNativeLibs NO-SOURCE
+> Task :pdf-engine:parseDebugLocalResources
+> Task :pdf-engine:copyDebugJniLibsProjectOnly
+> Task :pdf-engine:generateDebugRFile
+> Task :pdf-engine:checkDebugAarMetadata
+> Task :pdf-app:packageDebugResources
+> Task :pdf-app:parseDebugLocalResources
+> Task :office-app:packageDebugResources
+> Task :office-app:parseDebugLocalResources
+> Task :office-app:createDebugCompatibleScreenManifests
+> Task :office-app:extractDeepLinksDebug
+> Task :office-app:mergeDebugResources
+> Task :pdf-app:createDebugCompatibleScreenManifests
+> Task :pdf-app:mergeDebugResources
+> Task :pdf-app:extractDeepLinksDebug
+> Task :pdf-app:processDebugMainManifest
+> Task :office-app:processDebugMainManifest
+> Task :pdf-app:processDebugManifest
+> Task :office-app:processDebugManifest
+> Task :office-app:javaPreCompileDebug FROM-CACHE
+> Task :office-app:mergeDebugShaders
+> Task :office-app:compileDebugShaders NO-SOURCE
+> Task :office-app:generateDebugAssets UP-TO-DATE
+> Task :pdf-app:processDebugManifestForPackage
+> Task :office-app:mergeDebugAssets
+> Task :office-app:compressDebugAssets
+> Task :office-app:desugarDebugFileDependencies
+> Task :office-app:processDebugManifestForPackage
+> Task :office-app:checkDebugDuplicateClasses
+> Task :pdf-app:javaPreCompileDebug FROM-CACHE
+> Task :pdf-app:processDebugResources
+> Task :office-app:processDebugResources
+> Task :pdf-engine:stripDebugDebugSymbols NO-SOURCE
+> Task :pdf-engine:compileDebugKotlin
+> Task :pdf-engine:compileDebugJavaWithJavac NO-SOURCE
+> Task :office-app:mergeExtDexDebug
+> Task :pdf-app:mergeDebugShaders
+> Task :pdf-engine:copyDebugJniLibsProjectAndLocalJars
+> Task :pdf-app:compileDebugShaders NO-SOURCE
+> Task :pdf-app:generateDebugAssets UP-TO-DATE
+> Task :pdf-app:mergeDebugAssets
+> Task :pdf-engine:bundleLibRuntimeToJarDebug
+> Task :pdf-app:compressDebugAssets FROM-CACHE
+> Task :pdf-app:desugarDebugFileDependencies FROM-CACHE
+> Task :pdf-engine:processDebugJavaRes
+> Task :pdf-engine:bundleLibCompileToJarDebug
+> Task :pdf-engine:bundleLibRuntimeToDirDebug
+> Task :pdf-app:checkDebugDuplicateClasses
+> Task :office-app:compileDebugKotlin
+> Task :office-app:compileDebugJavaWithJavac NO-SOURCE
+> Task :office-app:dexBuilderDebug
+> Task :office-app:mergeDebugGlobalSynthetics
+> Task :office-app:processDebugJavaRes
+> Task :pdf-app:compileDebugKotlin
+> Task :office-app:mergeLibDexDebug
+> Task :office-app:mergeProjectDexDebug
+> Task :office-app:mergeDebugJniLibFolders
+> Task :office-app:mergeDebugNativeLibs
+> Task :office-app:mergeDebugJavaResource
+> Task :office-app:validateSigningDebug
+> Task :office-app:writeDebugAppMetadata
+
+> Task :office-app:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so. Run with --info option to learn more.
+
+> Task :pdf-app:compileDebugJavaWithJavac NO-SOURCE
+> Task :office-app:writeDebugSigningConfigVersions
+> Task :pdf-app:dexBuilderDebug
+> Task :pdf-app:mergeDebugGlobalSynthetics FROM-CACHE
+> Task :pdf-app:processDebugJavaRes
+> Task :pdf-app:mergeDebugJavaResource
+> Task :pdf-app:mergeLibDexDebug
+> Task :pdf-app:mergeProjectDexDebug
+> Task :pdf-app:mergeDebugJniLibFolders
+> Task :pdf-app:mergeDebugNativeLibs
+
+> Task :pdf-app:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so, libmupdf_java.so. Run with --info option to learn more.
+
+> Task :pdf-app:validateSigningDebug
+> Task :pdf-app:writeDebugAppMetadata
+> Task :pdf-app:writeDebugSigningConfigVersions
+> Task :office-app:packageDebug
+> Task :office-app:createDebugApkListingFileRedirect
+> Task :office-app:assembleDebug
+> Task :pdf-engine:extractDebugAnnotations
+> Task :pdf-engine:extractDeepLinksForAarDebug
+> Task :pdf-engine:mergeDebugGeneratedProguardFiles
+> Task :pdf-engine:mergeDebugConsumerProguardFiles
+> Task :pdf-engine:prepareDebugArtProfile
+> Task :pdf-engine:prepareLintJarForPublish
+> Task :pdf-engine:mergeDebugJavaResource
+> Task :pdf-engine:syncDebugLibJars
+> Task :pdf-engine:bundleDebugAar
+> Task :pdf-engine:assembleDebug
+> Task :pdf-app:mergeExtDexDebug
+> Task :pdf-app:packageDebug
+> Task :pdf-app:createDebugApkListingFileRedirect
+> Task :pdf-app:assembleDebug
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run-1795779365527.json
+
+BUILD SUCCESSFUL in 1m 36s
+105 actionable tasks: 97 executed, 8 from cache
