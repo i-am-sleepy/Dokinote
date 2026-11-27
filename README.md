@@ -1,20 +1,19 @@
 # Dokinote
 
-An offline-first, open-source Android PDF reader and editor. Goal: feature parity with the best commercial PDF apps, minus ads, accounts, analytics and cloud lock-in, plus more file formats.
+An offline-first, open-source Android document suite: PDF reader/editor, Office documents (Word first), and Obsidian-compatible notes. No ads, accounts, analytics or cloud lock-in.
 
-**Status:** pre-alpha. Right now the app is an *engine spike* that tests MuPDF on a real phone (render speed, redaction, Office to PDF). See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Status:** pre-alpha. Two independent tracks on separate branches (see `CLAUDE.md`):
 
-## Decisions
-- Engine: [MuPDF](https://mupdf.com) (AGPL-3.0). The whole app is licensed **AGPL-3.0-or-later**.
-- UI: Kotlin + Jetpack Compose (Material 3), Android only. minSdk 29 (Android 10), targetSdk 36 (Android 16). Native ABI: arm64-v8a only (32-bit ARM and x86 dropped).
-- No network permission in the app. No analytics, ads, accounts or paywall.
-- Cloud storage works through the Android document picker (Drive, Dropbox, OneDrive, Nextcloud apps), not through SDKs.
+| Branch | App | Dev builds |
+|---|---|---|
+| `track/pdf-notes` | `pdf-app` (`app.dokinote.pdf`) | pre-release `nightly-track-pdf-notes` |
+| `track/office` | `office-app` (`app.dokinote.office`) | pre-release `nightly-track-office` |
+| `main` | shared trunk | pre-release `nightly-main` |
 
-## Getting a build (no PC needed)
-Every push to `main` builds an APK with GitHub Actions and attaches it to the [`nightly` pre-release](../../releases/tag/nightly).
-If a build fails, the tail of the log is pushed to the `ci-logs` branch (`latest.txt`).
+Shared decisions: [docs/DECISIONS.md](docs/DECISIONS.md). Track handoffs: [docs/tracks/](docs/tracks/).
 
-The APK is signed with the **public** development key `dev.keystore` so each build installs over the previous one. It is not a release key.
+## Builds (no PC needed)
+Every push builds with GitHub Actions. If a build fails, the log tail is on branch `ci-log-<branch>` (`latest.txt`). APKs are signed with the **public** development key `dev.keystore` so each build installs over the previous one; it is not a release key.
 
 ## Licence
 AGPL-3.0-or-later. MuPDF is Copyright Artifex Software, Inc.

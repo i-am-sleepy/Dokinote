@@ -18,4 +18,5 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Dokinote"
-include(":app")
+include(":pdf-app")
+include(":office-app")

@@ -11,11 +11,11 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.dokinote"
+        applicationId = "app.dokinote.pdf"
         minSdk = 29
         targetSdk = 36
         versionCode = 1
-        versionName = "0.0.1-spike"
+        versionName = "0.0.1-pdf-spike"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 

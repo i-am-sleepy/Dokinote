@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Deliberately NO INTERNET permission: the app is offline by design. -->
+    <!-- Deliberately NO INTERNET permission: offline by design. -->
     <application
         android:allowBackup="false"
-        android:label="Dokinote spike"
+        android:label="Dokinote Office"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Dokinote">
+        android:theme="@style/Theme.DokinoteOffice">
         <activity
             android:name=".MainActivity"
             android:exported="true">
