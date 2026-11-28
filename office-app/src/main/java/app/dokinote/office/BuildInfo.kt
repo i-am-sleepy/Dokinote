@@ -1,5 +1,5 @@
 package app.dokinote.office
 
 object BuildInfo {
-    const val VERSION = "0.0.2-office-p0-spike"
+    const val VERSION = "0.0.3-office-p0-diag"
 }

@@ -1,12 +1,17 @@
 package app.dokinote.office
 
 import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
 import android.system.Os
 import android.system.OsConstants
 import org.json.JSONObject
 import java.io.File
+import java.io.InputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** Turns the JSON-lines files written by the engine process into one compact text report that can be pasted into chat. */
 object ReportBuilder {
@@ -33,6 +38,110 @@ object ReportBuilder {
         return "n${o.optInt("n")} p50 ${num(o, "p50")} p90 ${num(o, "p90")} max ${num(o, "max")} sum ${num(o, "sum")}"
     }
 
+    private val exitNames = mapOf(
+        0 to "UNKNOWN", 1 to "EXIT_SELF", 2 to "SIGNALED", 3 to "LOW_MEMORY", 4 to "CRASH", 5 to "CRASH_NATIVE",
+        6 to "ANR", 7 to "INITIALIZATION_FAILURE", 8 to "PERMISSION_CHANGE", 9 to "EXCESSIVE_RESOURCE_USAGE",
+        10 to "USER_REQUESTED", 11 to "USER_STOPPED", 12 to "DEPENDENCY_DIED", 13 to "OTHER", 14 to "FREEZER",
+        15 to "PACKAGE_STATE_CHANGE", 16 to "PACKAGE_UPDATED",
+    )
+
+    private fun tail(f: File, n: Int): String =
+        if (!f.exists()) "(none)\n" else f.readLines().takeLast(n).joinToString("\n") + "\n"
+
+    private fun readCapped(ins: InputStream, cap: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        while (out.size() < cap) {
+            val n = ins.read(buf)
+            if (n <= 0) break
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
+
+    private fun printableRuns(b: ByteArray): List<String> {
+        val out = LinkedHashSet<String>()
+        val cur = StringBuilder()
+        for (x in b) {
+            val c = x.toInt() and 0xff
+            if (c in 32..126) {
+                cur.append(c.toChar())
+            } else {
+                if (cur.length >= 6) out.add(cur.toString())
+                cur.setLength(0)
+            }
+        }
+        if (cur.length >= 6) out.add(cur.toString())
+        return out.toList()
+    }
+
+    /** The tombstone is a protobuf; without a parser we list its printable strings (signal, abort message, frames, libraries). */
+    private fun summarizeTombstone(b: ByteArray): String {
+        val runs = printableRuns(b)
+        val keys = listOf("SIG", "abort", "Abort", "Fatal", "assert", "Assert", "terminate", "xception", "lo-native", "liblo", "Java_", "std::", "sal_", "osl_", "lok_")
+        val hot = runs.filter { r -> keys.any { r.contains(it) } }.map { it.take(180) }.distinct().take(45)
+        val rest = runs.filter { it.length >= 10 && (it.contains(".so") || it.contains("::")) }.map { it.take(150) }.filter { it !in hot }.distinct().take(25)
+        val sb = StringBuilder()
+        sb.append("  tombstone ${b.size} bytes; key strings:\n")
+        for (h in hot) sb.append("    ").append(h).append('\n')
+        if (rest.isNotEmpty()) {
+            sb.append("  other symbols/libs:\n")
+            for (r in rest) sb.append("    ").append(r).append('\n')
+        }
+        return sb.toString()
+    }
+
+    private fun exits(ctx: Context): String {
+        if (Build.VERSION.SDK_INT < 30) return "(needs Android 11+)\n"
+        val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val list: List<ApplicationExitInfo> = try {
+            am.getHistoricalProcessExitReasons(ctx.packageName, 0, 10)
+        } catch (e: Exception) {
+            return "(unavailable: $e)\n"
+        }
+        val fmt = SimpleDateFormat("HH:mm:ss", Locale.US)
+        val sb = StringBuilder()
+        var traces = 0
+        for (i in list) {
+            sb.append("${fmt.format(Date(i.timestamp))} ${i.processName} ${exitNames[i.reason] ?: i.reason.toString()} ")
+            sb.append("status=${i.status} pss=${i.pss}KB rss=${i.rss}KB desc=${i.description}\n")
+            if (i.reason == 5 && traces < 2) {
+                traces++
+                try {
+                    val ins = i.traceInputStream
+                    if (ins != null) {
+                        val bytes = ins.use { readCapped(it, 800_000) }
+                        sb.append(summarizeTombstone(bytes))
+                    } else {
+                        sb.append("  (no trace stream)\n")
+                    }
+                } catch (e: Exception) {
+                    sb.append("  (trace unreadable: $e)\n")
+                }
+            }
+        }
+        if (sb.isEmpty()) sb.append("(none recorded)\n")
+        return sb.toString()
+    }
+
+    /** Own-uid logcat: warnings/errors/fatals plus anything from LibreOffice or this app. */
+    private fun logcat(): String {
+        return try {
+            val p = ProcessBuilder("logcat", "-d", "-t", "800").redirectErrorStream(true).start()
+            val lines = p.inputStream.bufferedReader().readLines()
+            p.destroy()
+            val prio = Regex("^\\d\\d-\\d\\d\\s+[\\d:.]+\\s+\\d+\\s+\\d+\\s+([VDIWEF])\\s")
+            val keep = lines.filter { l ->
+                val pr = prio.find(l)?.groupValues?.get(1) ?: ""
+                pr == "W" || pr == "E" || pr == "F" || l.contains("LibreOffice") || l.contains("dokinote", true) || l.contains("lo-bootstrap")
+            }.map { it.take(220) }.takeLast(120)
+            val text = keep.joinToString("\n")
+            (if (text.length > 14_000) text.takeLast(14_000) else text) + "\n"
+        } catch (e: Exception) {
+            "(logcat not available: $e)\n"
+        }
+    }
+
     fun build(ctx: Context, outDir: File, inDir: File): String {
         val sb = StringBuilder()
         val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -45,7 +154,15 @@ object ReportBuilder {
         sb.append("ram ${mi.totalMem / 1048576} MB, page ${Os.sysconf(OsConstants._SC_PAGESIZE)} B\n")
         sb.append("screen ${dm.widthPixels}x${dm.heightPixels} px, xdpi ${"%.0f".format(dm.xdpi)}\n")
         sb.append("engine: LibreOffice Viewer 26.2.7.3 (versionCode 135) libs, own process :lok, build ${BuildInfo.VERSION}\n")
-        sb.append("inputs: ${inDir.listFiles()?.count { it.isFile } ?: 0} documents\n\n")
+        sb.append("inputs: ${inDir.listFiles()?.count { it.isFile } ?: 0} documents\n")
+        val ip = File(outDir, "inprogress.txt")
+        val stp = File(outDir, "initstep.txt")
+        val part = File(outDir, "partial.json")
+        sb.append("state: inprogress marker = ${if (ip.exists()) ip.readText().trim() else "none"}; last init step = ${if (stp.exists()) stp.readText().trim() else "-"}")
+        if (part.exists()) sb.append("; partial lastStep = ${try { JSONObject(part.readText()).optString("lastStep") } catch (e: Exception) { "?" }}")
+        sb.append("\n\n== APP LOG (UI side, last 40 lines) ==\n")
+        sb.append(tail(File(outDir, "log.txt"), 40))
+        sb.append("\n")
 
         // ---- engine starts
         val inits = lines(File(outDir, "inits.jsonl"))
@@ -129,6 +246,10 @@ object ReportBuilder {
             val cb = o.optJSONObject("callbacks")
             if (cb != null && cb.length() > 0) sb.append("  callbacks (type:count) $cb\n")
         }
+        sb.append("\n== PROCESS EXITS (Android's own record of how each process of this app ended) ==\n")
+        sb.append(exits(ctx))
+        sb.append("\n== LOGCAT (own uid: warnings, errors, LibreOffice and app lines) ==\n")
+        sb.append(logcat())
         return sb.toString()
     }
 }

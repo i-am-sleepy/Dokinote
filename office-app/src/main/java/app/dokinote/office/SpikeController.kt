@@ -254,5 +254,16 @@ class SpikeController(
         onFinished()
     }
 
-    private fun log(s: String) = onLog(s)
+    private fun log(s: String) {
+        onLog(s)
+        try {
+            outDir.mkdirs()
+            val f = File(outDir, "log.txt")
+            if (f.exists() && f.length() > 200_000) f.delete()
+            val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+            f.appendText("$ts $s\n")
+        } catch (e: Exception) {
+            // logging must never break the run
+        }
+    }
 }

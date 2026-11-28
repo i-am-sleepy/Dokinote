@@ -60,6 +60,10 @@ class LokBench(
 
     // ---------------------------------------------------------------- helpers
 
+    private fun initStep(s: String) {
+        try { File(outDir, "initstep.txt").writeText(s) } catch (e: Exception) { /* ignore */ }
+    }
+
     private fun now() = System.nanoTime()
     private fun msSince(t0: Long): Double = ((System.nanoTime() - t0) / 10_000L) / 100.0 // 0.01 ms resolution
 
@@ -113,13 +117,16 @@ class LokBench(
         o.put("pss_start_kb", pssKb())
         try {
             val t0 = now()
+            initStep("putenv (loads the 14 native libraries)")
             LibreOfficeKit.putenv("SAL_LOG=" + if (salLogging) "+WARN+INFO" else "-INFO-WARN")
             LibreOfficeKit.putenv("SAL_LOK_OPTIONS=compact_fonts")
             val tLoad = msSince(t0)
+            initStep("LibreOfficeKit.init = initializeNative (asset unpack + LOK start)")
             LibreOfficeKit.init(ctx)
             o.put("libload_ms", tLoad)
             o.put("init_total_ms", msSince(t0))
             val t1 = now()
+            initStep("Office create")
             val off = Office(LibreOfficeKit.getLibreOfficeKitHandle())
             off.setMessageCallback(officeCb)
             off.setOptionalFeatures(Document.LOK_FEATURE_DOCUMENT_PASSWORD)
