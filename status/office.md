@@ -39,6 +39,13 @@ Updated: 2026-11-28 (A/B on phone confirms CRC cause; 0.0.6 adds zip preflight r
 - Watchdog confirmed on a real hang (0.0.5): killed `load` and `export-pdf` after 120 s, recorded HANG, run continued.
 - Still open from the P0 list: typing latency (probe added in 0.0.7), baselines (Collabora/Viewer/WPS) on the same docs, docxjs experiment, R1 (reflow) alternatives, size/bundling recommendation. Concurrency deliberately skipped (LOK README: single thread).
 
+## P0 results, third run (0.0.7; user took a phone call during it, so timings around 20:06 may be disturbed)
+- Typing probe v1 saw NO CALLBACK_INVALIDATE_TILES after any of 30 keys in 18 Writer docs ("missed 30"), but the engine clearly processed the keys: 30 CALLBACK_INVALIDATE_VISIBLE_CURSOR callbacks per doc with the caret advancing ~120 twips per key, STATE_CHANGED callbacks ~5x higher, `postKeyEvent` call itself 0.3 ms p50 (p90 0.5-14 ms, max 134 ms on the 178-page doc). Typed text itself NOT verified yet.
+- Cause (LibreOffice source, desktop/source/lib/init.cxx ~l.1735): tile invalidations are intersected with the box of tiles the client has painted; an invalidate-all (my `.uno:PrintLayout` right before typing) resets that box to empty, and nothing was painted afterwards, so every invalidation was dropped. Product consequence: the tile pipeline must keep painting visible tiles; invalidations only exist for painted areas. 0.0.8 primes one screen of tiles first, also records key -> cursor callback, saves a `.typed.png`, and adds button "4. Typing test only".
+- The one CRASH (issue_51265_3.docx at typing-key24) was Android's low-memory killer (process exit record: LOW_MEMORY, rss 369 MB, during the phone call), not an engine fault. Design note: the engine process can be killed at any time while the app is in the background; the app must be able to restart it and reopen the document.
+- Anatomy docx now appears 3 times (orignal name, ORIGINAL, crcfixed): all OK; the two broken-CRC copies are repaired (76-93 ms). PDF export of that doc is reproducibly slow: 175, 176, 193 s.
+- Everything else matches the first run (loads, tiles, slides, exports); WordWithAttachments.docx was not reached (run interrupted), it was OK in the first run.
+
 ## Verified
 - (by inspection of the uploaded APK) arm64 only, versionName 26.2.7.3, 14 native libs, `extractNativeLibs=true`, no INTERNET permission, 86 asset files; the exported JNI names of `liblo-native-code.so` match 1:1 the `native` methods of the Java bindings at tag 26.2.7.3. Exact argument types are NOT verified by name matching.
 

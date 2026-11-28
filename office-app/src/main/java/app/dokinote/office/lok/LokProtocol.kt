@@ -17,4 +17,5 @@ object LokProtocol {
 
     const val MODE_BENCH = "bench"
     const val MODE_COLD = "cold"
+    const val MODE_TYPING = "typing"
 }

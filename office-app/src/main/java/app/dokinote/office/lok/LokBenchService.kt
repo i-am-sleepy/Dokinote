@@ -71,7 +71,11 @@ class LokBenchService : Service() {
                 serviceCreatedAt = createdAt,
                 log = log,
             )
-            ok = if (mode == LokProtocol.MODE_COLD) bench.runCold(data.getString(LokProtocol.KEY_DOC)) else bench.runBench()
+            ok = when (mode) {
+                LokProtocol.MODE_COLD -> bench.runCold(data.getString(LokProtocol.KEY_DOC))
+                LokProtocol.MODE_TYPING -> bench.runTyping()
+                else -> bench.runBench()
+            }
         } catch (t: Throwable) {
             err = t.toString()
             log("job failed: $err")

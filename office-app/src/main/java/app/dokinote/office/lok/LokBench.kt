@@ -61,6 +61,7 @@ class LokBench(
 
     /** Arrival time (nanoTime) and payload of every CALLBACK_INVALIDATE_TILES, for the typing probe. */
     private val invalidations = LinkedBlockingQueue<Pair<Long, String>>()
+    private val cursorEvents = LinkedBlockingQueue<Long>()
     private val samples = ConcurrentHashMap<Int, ArrayList<String>>()
     private val sampleSignals = setOf(0, 1, 2, 5, 13)
     private val rectRe = Regex("(-?\\d+)\\s*,\\s*(-?\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)")
@@ -68,6 +69,7 @@ class LokBench(
     private fun onCb(signal: Int, payload: String?) {
         count(signal)
         if (signal == Document.CALLBACK_INVALIDATE_TILES) invalidations.offer(Pair(System.nanoTime(), payload ?: ""))
+        if (signal == Document.CALLBACK_INVALIDATE_VISIBLE_CURSOR) cursorEvents.offer(System.nanoTime())
         if (signal in sampleSignals) {
             val l = samples.getOrPut(signal) { ArrayList() }
             synchronized(l) { if (l.size < 3) l.add((payload ?: "").take(100)) }
@@ -282,10 +284,10 @@ class LokBench(
                 return false
             }
             val wd = File(outDir, "watchdog.txt")
-            if (name == "<cold>") {
+            if (name.startsWith("<")) {
                 wd.delete()
                 partialFile.delete()
-                log("previous cold-start test was interrupted; ignoring")
+                log("previous $name run was interrupted; ignoring")
             } else {
                 val p = try { JSONObject(partialFile.readText()) } catch (e: Exception) { JSONObject() }
                 p.put("doc", name)
@@ -529,14 +531,18 @@ class LokBench(
 
     /**
      * Typing latency (P0 item): click into the first page, then type 30 characters 40 ms apart. For each key we measure
-     * post -> first CALLBACK_INVALIDATE_TILES, and post -> the tile that contains the invalidated rectangle painted.
-     * Runs last, because it modifies the in-memory document (nothing is saved).
+     * post -> first cursor callback, post -> first CALLBACK_INVALIDATE_TILES, and post -> the tile that contains the
+     * invalidated rectangle painted. LibreOfficeKit only sends tile invalidations for areas the client has already
+     * painted (init.cxx: invalidations are intersected with the painted-tiles box, which an invalidate-all resets), so
+     * one screen of tiles is painted first. Modifies the in-memory document only (nothing is saved).
      */
     private fun typingProbe(doc: Document, r: JSONObject, step: (String) -> Unit) {
         val o = JSONObject()
         try {
             val docW = doc.getDocumentWidth()
             val tw = max(1, (256.0 * docW / screenW).toInt())
+            step("typing-prime")
+            tilePass(doc, docW, 0, 1.0)
             step("typing-click")
             doc.setClientZoom(256, 256, tw, tw)
             val x = (docW / 5).toInt()
@@ -545,18 +551,22 @@ class LokBench(
             doc.postMouseEvent(Document.MOUSE_EVENT_BUTTON_UP, x, y, 1, Document.MOUSE_BUTTON_LEFT, Document.KEYBOARD_MODIFIER_NONE)
             Thread.sleep(400)
             val post = ArrayList<Double>()
+            val toCursor = ArrayList<Double>()
             val toInval = ArrayList<Double>()
             val toTile = ArrayList<Double>()
             var missed = 0
             for (i in 0 until 30) {
                 step("typing-key$i")
                 invalidations.clear()
+                cursorEvents.clear()
                 val ch = 'a'.code + (i % 26)
                 val t = now()
                 doc.postKeyEvent(Document.KEY_EVENT_PRESS, ch, 0)
                 doc.postKeyEvent(Document.KEY_EVENT_RELEASE, ch, 0)
                 post.add(msSince(t))
                 val arrived = invalidations.poll(1500, TimeUnit.MILLISECONDS)
+                val cur = cursorEvents.poll(50, TimeUnit.MILLISECONDS)
+                if (cur != null) toCursor.add((cur - t) / 1_000_000.0)
                 if (arrived == null) {
                     missed++
                     continue
@@ -574,12 +584,95 @@ class LokBench(
             o.put("n", 30)
             o.put("missed", missed)
             o.put("post_ms", stats(post))
+            o.put("to_cursor_ms", stats(toCursor))
             o.put("to_invalidate_ms", stats(toInval))
             o.put("to_tile_ms", stats(toTile))
+            // Evidence for the eye: the first screen after typing (the typed letters should be at the click point).
+            step("typing-png")
+            val dim = paintScreen(doc, docW, doc.getDocumentHeight())
+            savePng(bigBuf, dim.first, dim.second, File(pngDir, safeBase(r.optString("doc")) + ".typed.png"))
         } catch (t: Throwable) {
             o.put("error", t.toString())
         }
         r.put("typing", o)
+    }
+
+    /** Typing-only run (about a minute): 5 documents spread over the size range of the .docx files that loaded fine. */
+    fun runTyping(): Boolean {
+        outDir.mkdirs(); pngDir.mkdirs()
+        if (inProgress.exists()) {
+            val n = inProgress.readText().trim()
+            inProgress.delete()
+            File(outDir, "watchdog.txt").delete()
+            partialFile.delete()
+            if (n == "<init>") {
+                log("previous process crashed during engine init; see logcat. Aborting.")
+                return false
+            }
+        }
+        val bad = HashSet<String>()
+        if (resultsFile.exists()) {
+            for (l in resultsFile.readLines()) {
+                try {
+                    val o = JSONObject(l)
+                    if (o.optString("status") != "OK") bad.add(o.optString("doc"))
+                } catch (e: Exception) {
+                    // skip
+                }
+            }
+        }
+        val docx = (inDir.listFiles() ?: emptyArray())
+            .filter { it.isFile && it.name.lowercase().endsWith(".docx") && it.name !in bad }
+            .sortedBy { it.length() }
+        if (docx.isEmpty()) {
+            log("typing test: no .docx documents available")
+            return true
+        }
+        if (!initLok()) return false
+        val k = minOf(5, docx.size)
+        val picks = (0 until k).map { docx[if (k == 1) 0 else it * (docx.size - 1) / (k - 1)] }.distinctBy { it.name }
+        val typingFile = File(outDir, "typing.jsonl")
+        for ((n, f) in picks.withIndex()) {
+            log("[typing ${n + 1}/${picks.size}] ${f.name}")
+            val r = JSONObject()
+            r.put("doc", f.name)
+            r.put("bytes", f.length())
+            inProgress.writeText("<typing>")
+            fun step(s: String) {
+                partialFile.writeText("{\"lastStep\":\"$s\"}")
+            }
+            try {
+                step("preflight")
+                val pf = try {
+                    ZipPreflight.prepare(f, File(ctx.cacheDir, "repaired"))
+                } catch (t: Throwable) {
+                    PreflightResult(f, false, 0, false, "error")
+                }
+                step("load")
+                val doc = office!!.documentLoad(pf.file.absolutePath)
+                if (doc == null) {
+                    r.put("status", "LOAD_FAIL")
+                    r.put("error", office!!.getError())
+                } else {
+                    doc.setMessageCallback(docCb)
+                    step("initForRendering")
+                    doc.initializeForRendering()
+                    doc.setPart(0)
+                    if (doc.getDocumentType() == Document.DOCTYPE_TEXT) typingProbe(doc, r, ::step) else r.put("note", "not a text document")
+                    step("destroy")
+                    doc.destroy()
+                    r.put("status", "OK")
+                }
+            } catch (t: Throwable) {
+                r.put("status", "EXCEPTION")
+                r.put("error", t.toString())
+            }
+            File(ctx.cacheDir, "repaired").deleteRecursively()
+            typingFile.appendText(r.toString() + "\n")
+            inProgress.delete()
+            partialFile.delete()
+        }
+        return true
     }
 
     // ---------------------------------------------------------------- Impress-like documents (slides)

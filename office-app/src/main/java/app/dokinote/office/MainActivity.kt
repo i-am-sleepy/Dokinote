@@ -142,6 +142,10 @@ class MainActivity : ComponentActivity() {
                             onClick = { controller.startCold(3, sal) },
                             enabled = !busy.value && inCount.value > 0,
                         ) { Text("3. Cold-start test (3 runs)") }
+                        Button(
+                            onClick = { controller.startTyping(sal) },
+                            enabled = !busy.value && inCount.value > 0,
+                        ) { Text("4. Typing test only (about 1 min)") }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { refreshReport() }) { Text("Refresh report") }
                             OutlinedButton(onClick = { copyReport() }) { Text("Copy") }

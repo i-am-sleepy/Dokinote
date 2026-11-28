@@ -95,6 +95,15 @@ class SpikeController(
         begin()
     }
 
+    fun startTyping(salLogging: Boolean) {
+        if (active) return
+        sal = salLogging
+        restarts = 0
+        job = jobBundle(LokProtocol.MODE_TYPING, null)
+        log("starting typing-only test")
+        begin()
+    }
+
     fun startCold(times: Int, salLogging: Boolean) {
         if (active) return
         sal = salLogging
@@ -229,7 +238,7 @@ class SpikeController(
     private fun onEngineDied() {
         unbindQuiet()
         val mode = job?.getString(LokProtocol.KEY_MODE)
-        if (mode == LokProtocol.MODE_BENCH) {
+        if (mode == LokProtocol.MODE_BENCH || mode == LokProtocol.MODE_TYPING) {
             restarts++
             if (restarts > 40) {
                 log("engine process died too many times, giving up")
@@ -258,9 +267,9 @@ class SpikeController(
                     File(outDir, "cold_e2e.txt").appendText("run=${coldIndex} ok=$ok e2e_ms=$e2e\n")
                     log("cold run $coldIndex: ok=$ok, bind-to-first-screen $e2e ms")
                 } else if (!ok) {
-                    log("benchmark stopped early: ${m.data.getString(LokProtocol.KEY_TEXT) ?: ""}")
+                    log("run stopped early: ${m.data.getString(LokProtocol.KEY_TEXT) ?: ""}")
                 } else {
-                    log("benchmark finished")
+                    log("run finished")
                 }
                 killEngine()
                 if (mode == LokProtocol.MODE_COLD && coldLeft > 0 && ok) {

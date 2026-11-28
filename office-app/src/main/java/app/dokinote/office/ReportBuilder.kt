@@ -142,6 +142,18 @@ object ReportBuilder {
         }
     }
 
+    private fun typingLines(ty: JSONObject): String {
+        val sb = StringBuilder()
+        sb.append("  typing (30 keys, 40 ms apart): missed ${ty.optInt("missed")} | key post ${st(ty.optJSONObject("post_ms"))}\n")
+        sb.append("    key -> cursor callback: ${st(ty.optJSONObject("to_cursor_ms"))}\n")
+        sb.append("    key -> invalidate callback: ${st(ty.optJSONObject("to_invalidate_ms"))}\n")
+        sb.append("    key -> invalidated tile painted: ${st(ty.optJSONObject("to_tile_ms"))}")
+        if (ty.has("sample_payload")) sb.append("  | first payload: ${ty.optString("sample_payload")}")
+        if (ty.has("error")) sb.append("  ERR ${ty.optString("error")}")
+        sb.append("\n")
+        return sb.toString()
+    }
+
     fun build(ctx: Context, outDir: File, inDir: File): String {
         val sb = StringBuilder()
         val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -189,6 +201,17 @@ object ReportBuilder {
             sb.append("\n")
         }
         for (l in e2e) sb.append("  ui-side: $l\n")
+
+        // ---- typing-only runs
+        val typ = lines(File(outDir, "typing.jsonl"))
+        if (typ.isNotEmpty()) {
+            sb.append("\n== TYPING TEST (tiles primed first; click in page 1, 30 keys 40 ms apart) ==\n")
+            for (o in typ) {
+                sb.append("[${o.optString("status")}] ${o.optString("doc")} (${o.optLong("bytes") / 1024} KB)\n")
+                val ty = o.optJSONObject("typing")
+                if (ty != null) sb.append(typingLines(ty)) else if (o.has("error")) sb.append("  ${o.optString("error")}\n")
+            }
+        }
 
         // ---- documents
         val res = lines(File(outDir, "results.jsonl"))
@@ -249,14 +272,7 @@ object ReportBuilder {
                 sb.append("\n")
             }
             val ty = o.optJSONObject("typing")
-            if (ty != null) {
-                sb.append("  typing (30 keys, 40 ms apart): missed ${ty.optInt("missed")} | key post ${st(ty.optJSONObject("post_ms"))}\n")
-                sb.append("    key -> invalidate callback: ${st(ty.optJSONObject("to_invalidate_ms"))}\n")
-                sb.append("    key -> invalidated tile painted: ${st(ty.optJSONObject("to_tile_ms"))}")
-                if (ty.has("sample_payload")) sb.append("  | first payload: ${ty.optString("sample_payload")}")
-                if (ty.has("error")) sb.append("  ERR ${ty.optString("error")}")
-                sb.append("\n")
-            }
+            if (ty != null) sb.append(typingLines(ty))
             val smp = o.optJSONObject("cb_samples")
             if (smp != null && smp.length() > 0) sb.append("  callback payload samples: $smp\n")
             val cb = o.optJSONObject("callbacks")
