@@ -1,5 +1,5 @@
 # Status: track/office
-Updated: 2026-11-28 (0.0.4 unpack fix works: engine starts, init 1.6 s; 0.0.5 adds per-step watchdog after the first document hung)
+Updated: 2026-11-28 (first full run on the phone: 26/27 documents OK; anatomy docx with CRC-32=0 entries is the only failure)
 
 ## Done (code written, NOT yet compiled by CI, NOT run on the phone)
 - `office-app` is now the P0 spike app (versionName 0.0.2-office-p0-spike):
@@ -20,6 +20,16 @@ Updated: 2026-11-28 (0.0.4 unpack fix works: engine starts, init 1.6 s; 0.0.5 ad
 - `LibreOfficeKit.initializeNative` aborted with an uncaught `com::sun::star::uno::DeploymentException` (SIGABRT in `libreofficekit_hook`). Cause: `assets/program/unorc` sets `UNO_TYPES=file://$APP_DATA_DIR/program/{udkapi,offapi,oovbaapi}.rdb`, and those files only exist in `assets/unpack/`. The TDF Viewer copies `assets/unpack/**` into the app data dir before starting LOK (`LibreOfficeMainActivity.updatePreferences` -> `copyFromAssets(assets, "unpack", dataDir)`); our spike skipped that. 0.0.4 does the same in `LokBench.unpackAssets` (once per app version, timed). Lesson: the Viewer's own init is more than `LibreOfficeKit.init`.
 - Verified on the phone (screenshot): 0.0.4 gets past init (libload 154 ms, init total 1584 ms, first_ever=true).
 - Then the first document (`All_anatomy_written_questions.docx`, the user's file with CRC-32 = 0 PNG entries, alphabetical first) ran for minutes with no result: unknown whether `documentLoad`, layout or a tile call. 0.0.5: UI-side watchdog kills the `:lok` process when one step exceeds 120 s, records status HANG with the step name, and continues; live "now: doc | step | seconds" line; Refresh report works while busy.
+
+## P0 results, first full run (vivo V2434, SD-class 8 cores, 7.6 GB RAM, Android 16, 720x1608; engine-only times, no UI/IPC/scroll; user's eyes confirmed only MRCP.docx)
+- Engine start: libs+init 0.8 s warm process (1.6 s the very first time), plus 0.2 s one-off unpack of 38 files / 11 MB; 103 MB PSS idle. Cold-start end-to-end test (button 3) NOT run yet.
+- 26/27 documents OK, no engine crash in the run. Writer: documentLoad 0.08-0.8 s typical (MRCP 10 pages/3 MB: 1.3 s + first screen 94 ms; 62 pages: 2.3 s + initRender 0.9 s; 178 pages: 16.8 s). Layout is done at load: jumping to the end tile afterwards cost 1-26 ms and the document height never changed.
+- 256 px tile paint: p50 0.4-7 ms, p90 <= 21 ms, one screen (21 tiles) 10-260 ms; single first-screen paint 6-300 ms (heaviest: image/chart docs).
+- Impress: load 1-11 s (themes.pptx 11.3 s for 10 slides, 28 slides 10.3 s, 48 slides 6.7 s, 23 slides 2.5 s); per-slide paint p50 13-73 ms, worst 1.1 s; revisit sweep roughly 2-6x faster; PDF export of the 48-slide deck 30.9 s, others 0.3-2.3 s; pptx re-save 0.5-4.9 s.
+- Memory (PSS): docx 180-330 MB loaded, pptx 200-535 MB; after closing a doc 250-450 MB stays in the process (supports killing :lok when idle). Not separated from accumulation across 26 documents in one process.
+- Export round trips produce files of plausible size (docx 6 KB-1.5 MB); validity in Word NOT checked.
+- R1 reflow probe: `.uno:Web` via postUnoCommand changed the document size in 0/19 Writer files (only +-1..18 twips on two). No reflow this way; command acceptance itself unverified.
+- Anatomy docx (CRC-32 = 0 on stored PNG entries): desktop LibreOffice 24.2.7.2 in the sandbox rejects the original in 0.6 s ("source file could not be loaded") and converts the CRC-fixed copy to PDF in 2.6 s. On the phone the original blocked `documentLoad` for minutes (no error): hypothesis = LOK waits on a "repair?" interaction nobody can answer. Needs: preflight zip check/repair before handing files to LOK (Word opens such files). A/B pair still to be run on the phone (also tests the 0.0.5 watchdog).
 
 ## Verified
 - (by inspection of the uploaded APK) arm64 only, versionName 26.2.7.3, 14 native libs, `extractNativeLibs=true`, no INTERNET permission, 86 asset files; the exported JNI names of `liblo-native-code.so` match 1:1 the `native` methods of the Java bindings at tag 26.2.7.3. Exact argument types are NOT verified by name matching.
