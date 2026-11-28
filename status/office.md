@@ -1,5 +1,5 @@
 # Status: track/office
-Updated: 2026-11-28 (first full run on the phone: 26/27 documents OK; anatomy docx with CRC-32=0 entries is the only failure)
+Updated: 2026-11-28 (A/B on phone confirms CRC cause; 0.0.6 adds zip preflight repair, cold-start/watchdog fixes)
 
 ## Done (code written, NOT yet compiled by CI, NOT run on the phone)
 - `office-app` is now the P0 spike app (versionName 0.0.2-office-p0-spike):
@@ -29,7 +29,8 @@ Updated: 2026-11-28 (first full run on the phone: 26/27 documents OK; anatomy do
 - Memory (PSS): docx 180-330 MB loaded, pptx 200-535 MB; after closing a doc 250-450 MB stays in the process (supports killing :lok when idle). Not separated from accumulation across 26 documents in one process.
 - Export round trips produce files of plausible size (docx 6 KB-1.5 MB); validity in Word NOT checked.
 - R1 reflow probe: `.uno:Web` via postUnoCommand changed the document size in 0/19 Writer files (only +-1..18 twips on two). No reflow this way; command acceptance itself unverified.
-- Anatomy docx (CRC-32 = 0 on stored PNG entries): desktop LibreOffice 24.2.7.2 in the sandbox rejects the original in 0.6 s ("source file could not be loaded") and converts the CRC-fixed copy to PDF in 2.6 s. On the phone the original blocked `documentLoad` for minutes (no error): hypothesis = LOK waits on a "repair?" interaction nobody can answer. Needs: preflight zip check/repair before handing files to LOK (Word opens such files). A/B pair still to be run on the phone (also tests the 0.0.5 watchdog).
+- Anatomy docx (CRC-32 = 0 on stored PNG entries): desktop LibreOffice 24.2.7.2 in the sandbox rejects the original in 0.6 s ("source file could not be loaded") and converts the CRC-fixed copy to PDF in 2.6 s. On the phone the original blocked `documentLoad` for minutes (no error): hypothesis = LOK waits on a "repair?" interaction nobody can answer. Needs: preflight zip check/repair before handing files to LOK (Word opens such files). A/B run on the phone (0.0.5): CRC-fixed copy loads in 2.9 s (initRender 6 ms, first screen 591 ms) and renders fine by eye; the original blocks `documentLoad` for >120 s (watchdog kill) -> CRC cause confirmed, hang (not an error) is the engine's behaviour on this file. The fixed copy then stalled in `export-pdf` for >120 s (desktop LO converts it in 2.6 s; cause unknown: image re-encode? page count unknown). 0.0.6: `ZipPreflight` re-writes zips with bad CRC before load; save-as docx/pptx is now measured before PDF; exports get a 240 s limit.
+- Cold-start test hung in 0.0.5: it picked the alphabetically first .docx = the hanging original, and the watchdog only covered the benchmark. 0.0.6: median-size .docx among known-good docs, watchdog covers cold mode, import is additive (+ "Clear documents" button).
 
 ## Verified
 - (by inspection of the uploaded APK) arm64 only, versionName 26.2.7.3, 14 native libs, `extractNativeLibs=true`, no INTERNET permission, 86 asset files; the exported JNI names of `liblo-native-code.so` match 1:1 the `native` methods of the Java bindings at tag 26.2.7.3. Exact argument types are NOT verified by name matching.

@@ -195,7 +195,7 @@ object ReportBuilder {
         val okN = res.count { it.optString("status") == "OK" }
         val crashN = res.count { it.optString("status") == "CRASH" }
         val hangN = res.count { it.optString("status") == "HANG" }
-        sb.append("\n== DOCUMENTS: ${res.size} results, $okN ok, $crashN crashed the engine, $hangN hung (watchdog ${SpikeController.STEP_TIMEOUT_S}s per step), ${res.size - okN - crashN - hangN} other failures ==\n")
+        sb.append("\n== DOCUMENTS: ${res.size} results, $okN ok, $crashN crashed the engine, $hangN hung (watchdog ${SpikeController.STEP_TIMEOUT_S}s per step, ${SpikeController.EXPORT_TIMEOUT_S}s for exports), ${res.size - okN - crashN - hangN} other failures ==\n")
         sb.append("units: ms unless noted; tile passes cover one screen at fit-width zoom (256 px tiles); 'zoom2x' = twice that zoom.\n")
         for (o in res) {
             val status = o.optString("status")
@@ -203,16 +203,17 @@ object ReportBuilder {
             val type = when (o.optInt("type", -1)) { 0 -> "text"; 1 -> "sheet"; 2 -> "slides"; 3 -> "draw"; else -> "?" }
             sb.append("\n[$status] ${o.optString("doc")}  ($type, $kb KB)\n")
             if (status == "CRASH" || status == "HANG") {
-                sb.append("  engine ${if (status == "HANG") "was killed by the watchdog" else "died"} at step '${o.optString("lastStep")}'; known so far: load ${num(o, "load_ms")} initRender ${num(o, "initRender_ms")} firstScreen ${num(o, "firstScreen_ms")}")
+                sb.append("  engine ${if (status == "HANG") "was killed by the watchdog" else "died"} at step '${o.optString("lastStep")}'; what was measured before that follows")
                 if (o.has("watchdog")) sb.append(" (${o.optString("watchdog")})")
                 sb.append("\n")
-                continue
             }
             if (status == "LOAD_FAIL" || status == "EXCEPTION") {
                 sb.append("  ${o.optString("error")}\n")
                 continue
             }
             sb.append("  load ${num(o, "load_ms")} | initRender ${num(o, "initRender_ms")} | parts ${num(o, "parts")}")
+            if (o.has("preflight_ms")) sb.append(" | preflight ${num(o, "preflight_ms")} ms")
+            if (o.optBoolean("zip_repaired")) sb.append(" (REPAIRED: ${o.optInt("zip_bad_entries")} zip entries had a bad CRC)")
             if (o.has("firstScreen_ms")) sb.append(" | first screen ${num(o, "firstScreen_ms")} | first tile ${num(o, "tile_first_ms")}")
             sb.append("\n")
             if (o.has("tiles_fit_pass1")) {

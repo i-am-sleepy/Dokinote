@@ -86,7 +86,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 inCount.value = n
                 busy.value = false
-                appendLog("imported $n documents")
+                appendLog("input folder now holds $n documents")
             }
         }.start()
     }
@@ -147,10 +147,16 @@ class MainActivity : ComponentActivity() {
                             OutlinedButton(onClick = { copyReport() }) { Text("Copy") }
                             OutlinedButton(onClick = { shareReport() }) { Text("Share") }
                         }
-                        OutlinedButton(
-                            onClick = { controller.resetResults(); refreshReport() },
-                            enabled = !busy.value,
-                        ) { Text("Clear results") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { controller.resetResults(); refreshReport() },
+                                enabled = !busy.value,
+                            ) { Text("Clear results") }
+                            OutlinedButton(
+                                onClick = { controller.clearInputs(); inCount.value = 0 },
+                                enabled = !busy.value,
+                            ) { Text("Clear documents") }
+                        }
                         if (live.value.isNotEmpty()) Text(live.value, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                         Text(logText.value, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                         if (pngs.value.isNotEmpty()) {

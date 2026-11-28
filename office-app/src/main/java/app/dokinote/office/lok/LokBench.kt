@@ -213,14 +213,27 @@ class LokBench(
             return false
         }
         o.put("doc", f.name)
+        o.put("doc", f.name)
+        inProgress.writeText("<cold>")
+        partialFile.writeText("{\"lastStep\":\"cold-preflight\"}")
+        val pf = try {
+            ZipPreflight.prepare(f, File(ctx.cacheDir, "repaired"))
+        } catch (t: Throwable) {
+            PreflightResult(f, false, 0, false, "error")
+        }
+        if (pf.repaired) o.put("zip_repaired", true)
+        partialFile.writeText("{\"lastStep\":\"cold-load\"}")
         val tl = now()
-        val doc = office!!.documentLoad(f.absolutePath)
+        val doc = office!!.documentLoad(pf.file.absolutePath)
         o.put("load_ms", msSince(tl))
         if (doc == null) {
             o.put("error", office!!.getError())
             coldFile.appendText(o.toString() + "\n")
+            inProgress.delete()
+            partialFile.delete()
             return false
         }
+        partialFile.writeText("{\"lastStep\":\"cold-first-screen\"}")
         doc.setMessageCallback(docCb)
         doc.initializeForRendering()
         val docW = doc.getDocumentWidth()
@@ -231,6 +244,9 @@ class LokBench(
         o.put("engine_ready_to_first_screen_ms", msSince(t0))
         o.put("pss_kb", pssKb())
         coldFile.appendText(o.toString() + "\n")
+        inProgress.delete()
+        partialFile.delete()
+        File(ctx.cacheDir, "repaired").deleteRecursively()
         log("cold: " + o.toString())
         return true
     }
@@ -247,18 +263,25 @@ class LokBench(
                 log("previous process crashed during engine init; see logcat. Aborting.")
                 return false
             }
-            val p = try { JSONObject(partialFile.readText()) } catch (e: Exception) { JSONObject() }
-            p.put("doc", name)
             val wd = File(outDir, "watchdog.txt")
-            if (wd.exists()) {
-                p.put("status", "HANG")
-                p.put("watchdog", wd.readText().trim())
+            if (name == "<cold>") {
                 wd.delete()
+                partialFile.delete()
+                log("previous cold-start test was interrupted; ignoring")
             } else {
-                p.put("status", "CRASH")
+                val p = try { JSONObject(partialFile.readText()) } catch (e: Exception) { JSONObject() }
+                p.put("doc", name)
+                if (wd.exists()) {
+                    p.put("status", "HANG")
+                    p.put("watchdog", wd.readText().trim())
+                    wd.delete()
+                } else {
+                    p.put("status", "CRASH")
+                }
+                resultsFile.appendText(p.toString() + "\n")
+                partialFile.delete()
+                log("recovered: $name -> ${p.optString("status")} at step '${p.optString("lastStep")}'")
             }
-            resultsFile.appendText(p.toString() + "\n")
-            log("recovered: $name -> ${p.optString("status")} at step '${p.optString("lastStep")}'")
         }
         val done = HashSet<String>()
         if (resultsFile.exists()) {
@@ -297,9 +320,20 @@ class LokBench(
 
         try {
             val off = office!!
+            step("preflight")
+            val tPf = now()
+            val pf = try {
+                ZipPreflight.prepare(f, File(ctx.cacheDir, "repaired"))
+            } catch (t: Throwable) {
+                r.put("preflight_error", t.toString())
+                PreflightResult(f, false, 0, false, "error")
+            }
+            r.put("preflight_ms", msSince(tPf))
+            if (pf.isZip) r.put("zip_bad_entries", pf.badEntries)
+            if (pf.repaired) r.put("zip_repaired", true)
             step("load")
             val tLoad = now()
-            val doc = off.documentLoad(f.absolutePath)
+            val doc = off.documentLoad(pf.file.absolutePath)
             r.put("load_ms", msSince(tLoad))
             if (doc == null) {
                 r.put("status", "LOAD_FAIL")
@@ -326,9 +360,9 @@ class LokBench(
 
             // Export round-trips (time + size only; outputs are deleted).
             val exports = JSONObject()
-            exportOne(doc, name, "pdf", exports, ::step)
             if (type == Document.DOCTYPE_TEXT) exportOne(doc, name, "docx", exports, ::step)
             if (type == Document.DOCTYPE_PRESENTATION) exportOne(doc, name, "pptx", exports, ::step)
+            exportOne(doc, name, "pdf", exports, ::step)
             r.put("export", exports)
             r.put("pss_after_export_kb", pssKb())
 
@@ -353,6 +387,7 @@ class LokBench(
         for ((k, v) in callbackCounts) cb.put(k.toString(), v.get())
         r.put("callbacks", cb)
         r.remove("lastStep")
+        File(ctx.cacheDir, "repaired").deleteRecursively()
         resultsFile.appendText(r.toString() + "\n")
         inProgress.delete()
         partialFile.delete()

@@ -59,7 +59,6 @@ class SpikeController(
     /** Shows what the engine is doing right now and kills it when one step runs longer than [STEP_TIMEOUT_S]. */
     private fun checkLive() {
         if (SystemClock.elapsedRealtime() < graceUntil) return
-        if (job?.getString(LokProtocol.KEY_MODE) != LokProtocol.MODE_BENCH) return
         val ip = File(outDir, "inprogress.txt")
         if (!ip.exists()) {
             onLive("engine: between documents")
@@ -76,10 +75,11 @@ class SpikeController(
         val base = if (stepFile.exists()) stepFile else ip
         val ageS = (System.currentTimeMillis() - base.lastModified()) / 1000
         onLive("now: $doc | step: $step | ${ageS}s in this step")
-        if (ageS > STEP_TIMEOUT_S && !watchdogFired && service != null) {
+        val limit = if (step.startsWith("export")) EXPORT_TIMEOUT_S else STEP_TIMEOUT_S
+        if (ageS > limit && !watchdogFired && service != null) {
             watchdogFired = true
-            try { File(outDir, "watchdog.txt").writeText("step=$step secs=$ageS limit=$STEP_TIMEOUT_S") } catch (e: Exception) { /* ignore */ }
-            log("WATCHDOG: step '$step' of $doc ran over ${STEP_TIMEOUT_S}s - killing the engine process")
+            try { File(outDir, "watchdog.txt").writeText("step=$step secs=$ageS limit=$limit") } catch (e: Exception) { /* ignore */ }
+            log("WATCHDOG: step '$step' of $doc ran over ${limit}s - killing the engine process")
             try { service?.send(Message.obtain(null, LokProtocol.MSG_KILL)) } catch (e: Exception) { /* ignore */ }
         }
     }
@@ -110,40 +110,51 @@ class SpikeController(
 
     // ------------------------------------------------------------ import
 
-    /** Copies the supported documents below [tree] into the private input folder. Call from a background thread. */
+    /** Adds the supported documents below [tree] to the private input folder (existing ones with the same name and size are kept). Call from a background thread. */
     fun importTree(tree: Uri, progress: (String) -> Unit): Int {
-        inDir.deleteRecursively()
         inDir.mkdirs()
         val cr = app.contentResolver
-        var count = 0
+        var added = 0
         fun walk(docId: String) {
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
             val cols = arrayOf(
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                 DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                 DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE,
             )
-            val rows = ArrayList<Triple<String, String, String>>()
+            val rows = ArrayList<DocRow>()
             cr.query(children, cols, null, null, null)?.use { c ->
                 while (c.moveToNext()) {
-                    rows.add(Triple(c.getString(0) ?: "", c.getString(1) ?: "", c.getString(2) ?: ""))
+                    val size = if (c.isNull(3)) -1L else c.getLong(3)
+                    rows.add(DocRow(c.getString(0) ?: "", c.getString(1) ?: "", c.getString(2) ?: "", size))
                 }
             }
-            for ((id, name, mime) in rows) {
-                if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                    walk(id)
-                } else if (isSupported(name)) {
-                    val src = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                    val dest = uniqueDest(name)
+            for (row in rows) {
+                if (row.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    walk(row.id)
+                } else if (isSupported(row.name)) {
+                    val safe = row.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                    val existing = File(inDir, safe)
+                    if (existing.exists() && row.size >= 0 && existing.length() == row.size) continue
+                    val src = DocumentsContract.buildDocumentUriUsingTree(tree, row.id)
+                    val dest = uniqueDest(row.name)
                     cr.openInputStream(src)?.use { input -> dest.outputStream().use { input.copyTo(it) } }
-                    count++
-                    progress("imported $count: ${dest.name}")
+                    added++
+                    progress("imported $added: ${dest.name}")
                 }
             }
         }
         walk(DocumentsContract.getTreeDocumentId(tree))
-        return count
+        return inputCount()
     }
+
+    fun clearInputs() {
+        inDir.deleteRecursively()
+        log("imported documents cleared")
+    }
+
+    private class DocRow(val id: String, val name: String, val mime: String, val size: Long)
 
     fun inputCount(): Int = inDir.listFiles()?.count { it.isFile } ?: 0
 
@@ -224,7 +235,7 @@ class SpikeController(
                 log("engine process died too many times, giving up")
                 finish()
             } else {
-                log("engine process died (native crash?) - restarting, attempt $restarts")
+                log(if (watchdogFired) "engine stopped by the watchdog - restarting, attempt $restarts" else "engine process died (native crash?) - restarting, attempt $restarts")
                 main.postDelayed({ begin() }, 600)
             }
         } else {
@@ -265,8 +276,23 @@ class SpikeController(
     private fun nextCold() {
         coldIndex++
         coldLeft--
-        val first = inDir.listFiles()?.filter { it.isFile }?.sortedBy { it.name }
-        val prefer = first?.firstOrNull { it.name == "poi_sample.docx" } ?: first?.firstOrNull { it.name.endsWith(".docx") }
+        // Median-sized .docx among the documents that are not known to hang or crash the engine.
+        val bad = HashSet<String>()
+        val rf = File(outDir, "results.jsonl")
+        if (rf.exists()) {
+            for (l in rf.readLines()) {
+                try {
+                    val o = JSONObject(l)
+                    if (o.optString("status") != "OK") bad.add(o.optString("doc"))
+                } catch (e: Exception) {
+                    // skip
+                }
+            }
+        }
+        val docx = inDir.listFiles()
+            ?.filter { it.isFile && it.name.lowercase().endsWith(".docx") && it.name !in bad }
+            ?.sortedBy { it.length() }
+        val prefer = docx?.getOrNull(docx.size / 2)
         job = jobBundle(LokProtocol.MODE_COLD, prefer?.name)
         log("cold-start run $coldIndex")
         begin()
@@ -316,5 +342,8 @@ class SpikeController(
     companion object {
         /** One engine step (load, one tile pass, one export...) longer than this is treated as a hang. */
         const val STEP_TIMEOUT_S = 120L
+
+        /** Exports (save as docx/pptx, PDF) get a longer leash. */
+        const val EXPORT_TIMEOUT_S = 240L
     }
 }
