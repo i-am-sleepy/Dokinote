@@ -1,5 +1,5 @@
 # Status: track/office
-Updated: 2026-11-28 (first phone report was EMPTY; diagnostics build 0.0.3 pushed)
+Updated: 2026-11-28 (0.0.3 diagnostics found the init crash; 0.0.4 adds the missing asset unpack)
 
 ## Done (code written, NOT yet compiled by CI, NOT run on the phone)
 - `office-app` is now the P0 spike app (versionName 0.0.2-office-p0-spike):
@@ -15,6 +15,10 @@ Updated: 2026-11-28 (first phone report was EMPTY; diagnostics build 0.0.3 pushe
 ## First phone report (vivo V2434, Android 16, 4 KB pages, 720x1608, 7.6 GB RAM)
 - 27 documents imported, but the report had no engine start and no results: either the benchmark was not started yet or the `:lok` process died before logging (native crash in init). The 0.0.2 report could not tell which, so 0.0.3 adds app log, init step/inprogress markers, Android's process-exit records (with tombstone strings for native crashes) and own-uid logcat to the report.
 - User's own test file `All_anatomy_written_questions.docx` (5 MB, 2608 paragraphs, two scanned-page PNGs 2550x3346 and 2484x3264, Google-Docs-style fonts): both stored PNG entries have CRC-32 = 0 in the zip (data-descriptor flag, PNG data itself is valid). Word accepts such files; LibreOffice's zip reader may not. A/B pair prepared (original vs same content with correct CRCs) to see whether LOK loads the original. If it fails, a tolerant zip pre-repair step is a product feature.
+
+## Root cause of the first crash (found with 0.0.3 diagnostics)
+- `LibreOfficeKit.initializeNative` aborted with an uncaught `com::sun::star::uno::DeploymentException` (SIGABRT in `libreofficekit_hook`). Cause: `assets/program/unorc` sets `UNO_TYPES=file://$APP_DATA_DIR/program/{udkapi,offapi,oovbaapi}.rdb`, and those files only exist in `assets/unpack/`. The TDF Viewer copies `assets/unpack/**` into the app data dir before starting LOK (`LibreOfficeMainActivity.updatePreferences` -> `copyFromAssets(assets, "unpack", dataDir)`); our spike skipped that. 0.0.4 does the same in `LokBench.unpackAssets` (once per app version, timed). Lesson: the Viewer's own init is more than `LibreOfficeKit.init`.
+- Not yet verified on the phone that 0.0.4 gets past init.
 
 ## Verified
 - (by inspection of the uploaded APK) arm64 only, versionName 26.2.7.3, 14 native libs, `extractNativeLibs=true`, no INTERNET permission, 86 asset files; the exported JNI names of `liblo-native-code.so` match 1:1 the `native` methods of the Java bindings at tag 26.2.7.3. Exact argument types are NOT verified by name matching.

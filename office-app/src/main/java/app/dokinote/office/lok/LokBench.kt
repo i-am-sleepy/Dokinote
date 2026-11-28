@@ -1,6 +1,8 @@
 package app.dokinote.office.lok
 
 import android.content.Context
+import android.content.res.AssetManager
+import app.dokinote.office.BuildInfo
 import android.graphics.Bitmap
 import android.os.Debug
 import android.os.Process
@@ -102,6 +104,52 @@ class LokBench(
 
     // ---------------------------------------------------------------- engine init
 
+    /**
+     * The Viewer copies assets/unpack/** (UNO type registries udkapi/offapi/oovbaapi.rdb, sofficerc, fonts.conf, bundled
+     * fonts) into the app data dir BEFORE starting LibreOfficeKit (LibreOfficeMainActivity.updatePreferences in the
+     * LibreOffice source). unorc points UNO_TYPES at $APP_DATA_DIR/program/*.rdb; without them init aborts with a
+     * DeploymentException (first spike run, 2026-11-28). Re-done whenever the app version changes.
+     */
+    private fun unpackAssets(o: JSONObject) {
+        val dataDir = ctx.applicationInfo.dataDir
+        val marker = File(ctx.filesDir, "spike/unpacked_for.txt")
+        val want = BuildInfo.VERSION
+        if (marker.exists() && marker.readText() == want && File(dataDir, "program/udkapi.rdb").exists()) {
+            o.put("unpack_skipped", true)
+            return
+        }
+        initStep("unpack assets/unpack into $dataDir")
+        val t = now()
+        val counter = longArrayOf(0L, 0L)
+        val ok = copyTree(ctx.assets, "unpack", dataDir, counter)
+        o.put("unpack_ms", msSince(t))
+        o.put("unpack_files", counter[0])
+        o.put("unpack_bytes", counter[1])
+        o.put("unpack_ok", ok)
+        if (!ok) throw IllegalStateException("asset unpack failed")
+        marker.parentFile?.mkdirs()
+        marker.writeText(want)
+    }
+
+    private fun copyTree(am: AssetManager, from: String, to: String, counter: LongArray): Boolean {
+        val names = am.list(from) ?: return false
+        var ok = true
+        for (n in names) {
+            val sub = "$from/$n"
+            val children = am.list(sub)
+            if (children == null || children.isEmpty()) {
+                File(to).mkdirs()
+                am.open(sub).use { input ->
+                    FileOutputStream(File(to, n)).use { out -> counter[1] += input.copyTo(out) }
+                }
+                counter[0]++
+            } else {
+                ok = copyTree(am, sub, "$to/$n", counter) && ok
+            }
+        }
+        return ok
+    }
+
     /** @return true when the engine is ready. Writes one line to inits.jsonl per process. */
     private fun initLok(): Boolean {
         outDir.mkdirs()
@@ -116,6 +164,7 @@ class LokBench(
         o.put("xdpi", dm.xdpi.toDouble())
         o.put("pss_start_kb", pssKb())
         try {
+            unpackAssets(o)
             val t0 = now()
             initStep("putenv (loads the 14 native libraries)")
             LibreOfficeKit.putenv("SAL_LOG=" + if (salLogging) "+WARN+INFO" else "-INFO-WARN")

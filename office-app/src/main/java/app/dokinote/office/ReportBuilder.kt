@@ -170,6 +170,7 @@ object ReportBuilder {
         if (inits.isEmpty()) sb.append("(none)\n")
         for ((i, o) in inits.withIndex()) {
             sb.append("#${i + 1} ok=${o.optBoolean("ok")} first_ever=${o.optBoolean("first_init_ever")} sal=${o.optBoolean("sal_logging")} ")
+            sb.append(if (o.optBoolean("unpack_skipped")) "unpack skipped (already done), " else "unpack ${num(o, "unpack_ms")} ms (${o.optLong("unpack_files")} files, ${o.optLong("unpack_bytes") / 1024} KB), ")
             sb.append("proc->service ${num(o, "process_to_service_ms")} ms, libload ${num(o, "libload_ms")}, init total ${num(o, "init_total_ms")}, ")
             sb.append("office create ${num(o, "office_create_ms")}, pss start/after-init ${mb(o, "pss_start_kb")}/${mb(o, "pss_after_init_kb")} MB")
             if (o.has("error")) sb.append("  ERROR ${o.optString("error")}")
