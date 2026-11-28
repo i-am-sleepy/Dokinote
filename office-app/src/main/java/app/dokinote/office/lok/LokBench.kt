@@ -105,9 +105,9 @@ class LokBench(
     // ---------------------------------------------------------------- engine init
 
     /**
-     * The Viewer copies assets/unpack/** (UNO type registries udkapi/offapi/oovbaapi.rdb, sofficerc, fonts.conf, bundled
+     * The Viewer copies everything below assets/unpack (UNO type registries udkapi, offapi and oovbaapi .rdb, sofficerc, fonts.conf, bundled
      * fonts) into the app data dir BEFORE starting LibreOfficeKit (LibreOfficeMainActivity.updatePreferences in the
-     * LibreOffice source). unorc points UNO_TYPES at $APP_DATA_DIR/program/*.rdb; without them init aborts with a
+     * LibreOffice source). unorc points UNO_TYPES at the .rdb files in APP_DATA_DIR/program; without them init aborts with a
      * DeploymentException (first spike run, 2026-11-28). Re-done whenever the app version changes.
      */
     private fun unpackAssets(o: JSONObject) {
