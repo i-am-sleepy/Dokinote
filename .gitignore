@@ -9,3 +9,7 @@ local.properties
 .cxx/
 *.apk
 !dev.keystore
+
+# Office track: generated from the pinned LibreOffice Viewer APK by tools/fetch_lok_apk.sh
+/office-app/src/main/jniLibs/
+/office-app/src/main/assets/

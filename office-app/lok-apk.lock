@@ -1,0 +1,10 @@
+# Pinned LibreOffice Viewer (TDF, F-Droid build) used as the SPIKE ENGINE INPUT for the Office track.
+# tools/fetch_lok_apk.sh downloads it, checks the sha256 and unpacks lib/arm64-v8a/*.so + assets/ into
+# office-app/src/main/{jniLibs,assets} (git-ignored; the .so is ~196 MB, above GitHub's 100 MB file limit).
+# Licence: MPL-2.0 (see docs/THIRD_PARTY.md). Source tag: libreoffice-26.2.7.3.
+NAME="org.documentfoundation.libreoffice_135.apk"
+VERSION_NAME="26.2.7.3"
+VERSION_CODE="135"
+SHA256="e921bfb14170824572eb1e33643538803681226427948c245084f5e6356c3775"
+# Tried in order. Last resort: a release named "lok-inputs" in this repo holding $NAME as an asset.
+URLS="https://f-droid.org/repo/org.documentfoundation.libreoffice_135.apk https://cloudflare.f-droid.org/repo/org.documentfoundation.libreoffice_135.apk https://ftp.fau.de/fdroid/repo/org.documentfoundation.libreoffice_135.apk https://mirror.cyberbits.eu/fdroid/repo/org.documentfoundation.libreoffice_135.apk"

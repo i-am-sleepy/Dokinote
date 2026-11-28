@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Deliberately NO INTERNET permission: offline by design. -->
+    <!-- Deliberately NO INTERNET permission: offline by design. Documents come in through the system picker (SAF). -->
     <application
         android:allowBackup="false"
+        android:extractNativeLibs="true"
         android:label="Dokinote Office"
         android:supportsRtl="true"
         android:theme="@style/Theme.DokinoteOffice">
@@ -14,5 +15,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- LibreOfficeKit engine: own process so it can be killed to unload LibreOffice (docs/DECISIONS.md). -->
+        <service
+            android:name=".lok.LokBenchService"
+            android:exported="false"
+            android:process=":lok" />
     </application>
 </manifest>

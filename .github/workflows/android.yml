@@ -27,11 +27,21 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # Office track (additive): unpack the pinned LibreOffice Viewer libs/assets into office-app (see office-app/lok-apk.lock).
+      - name: Fetch LibreOffice engine for office-app
+        if: hashFiles('office-app/lok-apk.lock') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -o pipefail
+          tools/fetch_lok_apk.sh 2>&1 | tee build.log
+
       - name: Build debug APKs
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew --no-daemon --stacktrace assembleDebug 2>&1 | tee build.log
+          ./gradlew --no-daemon --stacktrace assembleDebug 2>&1 | tee -a build.log
 
       - name: Publish dev APKs to a per-branch pre-release
         if: github.event_name != 'pull_request' && success()
