@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
 
     private val logText = mutableStateOf("")
     private val busy = mutableStateOf(false)
+    private val live = mutableStateOf("")
     private val inCount = mutableStateOf(0)
     private val report = mutableStateOf("")
     private val pngs = mutableStateOf<List<File>>(emptyList())
@@ -111,6 +112,7 @@ class MainActivity : ComponentActivity() {
             onLog = { appendLog(it) },
             onBusy = { busy.value = it },
             onFinished = { refreshReport() },
+            onLive = { live.value = it },
         )
         inCount.value = controller.inputCount()
         refreshReport()
@@ -130,7 +132,7 @@ class MainActivity : ComponentActivity() {
                         Button(onClick = { picker.launch(null) }, enabled = !busy.value) { Text("1. Pick the sample folder") }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Switch(checked = sal, onCheckedChange = { sal = it })
-                            Text("Viewer-like LOK logging (SAL_LOG=+WARN+INFO)")
+                            Text("Viewer-like LOK logging (SAL_LOG=+WARN+INFO), read when you press Run")
                         }
                         Button(
                             onClick = { controller.startBench(sal) },
@@ -141,7 +143,7 @@ class MainActivity : ComponentActivity() {
                             enabled = !busy.value && inCount.value > 0,
                         ) { Text("3. Cold-start test (3 runs)") }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { refreshReport() }, enabled = !busy.value) { Text("Refresh report") }
+                            OutlinedButton(onClick = { refreshReport() }) { Text("Refresh report") }
                             OutlinedButton(onClick = { copyReport() }) { Text("Copy") }
                             OutlinedButton(onClick = { shareReport() }) { Text("Share") }
                         }
@@ -149,6 +151,7 @@ class MainActivity : ComponentActivity() {
                             onClick = { controller.resetResults(); refreshReport() },
                             enabled = !busy.value,
                         ) { Text("Clear results") }
+                        if (live.value.isNotEmpty()) Text(live.value, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                         Text(logText.value, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                         if (pngs.value.isNotEmpty()) {
                             Text("Rendered first screens (check fidelity by eye):")

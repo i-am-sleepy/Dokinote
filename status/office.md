@@ -1,5 +1,5 @@
 # Status: track/office
-Updated: 2026-11-28 (0.0.3 diagnostics found the init crash; 0.0.4 adds the missing asset unpack)
+Updated: 2026-11-28 (0.0.4 unpack fix works: engine starts, init 1.6 s; 0.0.5 adds per-step watchdog after the first document hung)
 
 ## Done (code written, NOT yet compiled by CI, NOT run on the phone)
 - `office-app` is now the P0 spike app (versionName 0.0.2-office-p0-spike):
@@ -18,7 +18,8 @@ Updated: 2026-11-28 (0.0.3 diagnostics found the init crash; 0.0.4 adds the miss
 
 ## Root cause of the first crash (found with 0.0.3 diagnostics)
 - `LibreOfficeKit.initializeNative` aborted with an uncaught `com::sun::star::uno::DeploymentException` (SIGABRT in `libreofficekit_hook`). Cause: `assets/program/unorc` sets `UNO_TYPES=file://$APP_DATA_DIR/program/{udkapi,offapi,oovbaapi}.rdb`, and those files only exist in `assets/unpack/`. The TDF Viewer copies `assets/unpack/**` into the app data dir before starting LOK (`LibreOfficeMainActivity.updatePreferences` -> `copyFromAssets(assets, "unpack", dataDir)`); our spike skipped that. 0.0.4 does the same in `LokBench.unpackAssets` (once per app version, timed). Lesson: the Viewer's own init is more than `LibreOfficeKit.init`.
-- Not yet verified on the phone that 0.0.4 gets past init.
+- Verified on the phone (screenshot): 0.0.4 gets past init (libload 154 ms, init total 1584 ms, first_ever=true).
+- Then the first document (`All_anatomy_written_questions.docx`, the user's file with CRC-32 = 0 PNG entries, alphabetical first) ran for minutes with no result: unknown whether `documentLoad`, layout or a tile call. 0.0.5: UI-side watchdog kills the `:lok` process when one step exceeds 120 s, records status HANG with the step name, and continues; live "now: doc | step | seconds" line; Refresh report works while busy.
 
 ## Verified
 - (by inspection of the uploaded APK) arm64 only, versionName 26.2.7.3, 14 native libs, `extractNativeLibs=true`, no INTERNET permission, 86 asset files; the exported JNI names of `liblo-native-code.so` match 1:1 the `native` methods of the Java bindings at tag 26.2.7.3. Exact argument types are NOT verified by name matching.

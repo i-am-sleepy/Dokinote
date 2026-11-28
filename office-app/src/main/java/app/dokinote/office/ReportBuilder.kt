@@ -194,15 +194,18 @@ object ReportBuilder {
         val res = lines(File(outDir, "results.jsonl"))
         val okN = res.count { it.optString("status") == "OK" }
         val crashN = res.count { it.optString("status") == "CRASH" }
-        sb.append("\n== DOCUMENTS: ${res.size} results, $okN ok, $crashN crashed the engine, ${res.size - okN - crashN} other failures ==\n")
+        val hangN = res.count { it.optString("status") == "HANG" }
+        sb.append("\n== DOCUMENTS: ${res.size} results, $okN ok, $crashN crashed the engine, $hangN hung (watchdog ${SpikeController.STEP_TIMEOUT_S}s per step), ${res.size - okN - crashN - hangN} other failures ==\n")
         sb.append("units: ms unless noted; tile passes cover one screen at fit-width zoom (256 px tiles); 'zoom2x' = twice that zoom.\n")
         for (o in res) {
             val status = o.optString("status")
             val kb = o.optLong("bytes") / 1024
             val type = when (o.optInt("type", -1)) { 0 -> "text"; 1 -> "sheet"; 2 -> "slides"; 3 -> "draw"; else -> "?" }
             sb.append("\n[$status] ${o.optString("doc")}  ($type, $kb KB)\n")
-            if (status == "CRASH") {
-                sb.append("  engine died at step '${o.optString("lastStep")}'; known so far: load ${num(o, "load_ms")}\n")
+            if (status == "CRASH" || status == "HANG") {
+                sb.append("  engine ${if (status == "HANG") "was killed by the watchdog" else "died"} at step '${o.optString("lastStep")}'; known so far: load ${num(o, "load_ms")} initRender ${num(o, "initRender_ms")} firstScreen ${num(o, "firstScreen_ms")}")
+                if (o.has("watchdog")) sb.append(" (${o.optString("watchdog")})")
+                sb.append("\n")
                 continue
             }
             if (status == "LOAD_FAIL" || status == "EXCEPTION") {

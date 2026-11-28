@@ -15,6 +15,7 @@ import android.os.SystemClock
 import android.provider.DocumentsContract
 import app.dokinote.office.lok.LokBenchService
 import app.dokinote.office.lok.LokProtocol
+import org.json.JSONObject
 import java.io.File
 
 /**
@@ -27,6 +28,7 @@ class SpikeController(
     private val onLog: (String) -> Unit,
     private val onBusy: (Boolean) -> Unit,
     private val onFinished: () -> Unit,
+    private val onLive: (String) -> Unit = {},
 ) {
     val root = File(app.filesDir, "spike")
     val inDir = File(root, "in")
@@ -43,6 +45,44 @@ class SpikeController(
     private var coldLeft = 0
     private var coldIndex = 0
     private var sal = false
+    private var watchdogFired = false
+    private var graceUntil = 0L
+
+    private val tick = object : Runnable {
+        override fun run() {
+            if (!active) return
+            checkLive()
+            main.postDelayed(this, 3000)
+        }
+    }
+
+    /** Shows what the engine is doing right now and kills it when one step runs longer than [STEP_TIMEOUT_S]. */
+    private fun checkLive() {
+        if (SystemClock.elapsedRealtime() < graceUntil) return
+        if (job?.getString(LokProtocol.KEY_MODE) != LokProtocol.MODE_BENCH) return
+        val ip = File(outDir, "inprogress.txt")
+        if (!ip.exists()) {
+            onLive("engine: between documents")
+            return
+        }
+        val doc = try { ip.readText().trim() } catch (e: Exception) { "?" }
+        val stepFile = if (doc == "<init>") File(outDir, "initstep.txt") else File(outDir, "partial.json")
+        var step = "?"
+        try {
+            step = if (doc == "<init>") stepFile.readText().trim() else JSONObject(stepFile.readText()).optString("lastStep")
+        } catch (e: Exception) {
+            // file being rewritten
+        }
+        val base = if (stepFile.exists()) stepFile else ip
+        val ageS = (System.currentTimeMillis() - base.lastModified()) / 1000
+        onLive("now: $doc | step: $step | ${ageS}s in this step")
+        if (ageS > STEP_TIMEOUT_S && !watchdogFired && service != null) {
+            watchdogFired = true
+            try { File(outDir, "watchdog.txt").writeText("step=$step secs=$ageS limit=$STEP_TIMEOUT_S") } catch (e: Exception) { /* ignore */ }
+            log("WATCHDOG: step '$step' of $doc ran over ${STEP_TIMEOUT_S}s - killing the engine process")
+            try { service?.send(Message.obtain(null, LokProtocol.MSG_KILL)) } catch (e: Exception) { /* ignore */ }
+        }
+    }
 
     // ------------------------------------------------------------ public actions
 
@@ -137,6 +177,10 @@ class SpikeController(
 
     private fun begin() {
         active = true
+        watchdogFired = false
+        graceUntil = SystemClock.elapsedRealtime() + 10_000
+        main.removeCallbacks(tick)
+        main.postDelayed(tick, 3000)
         onBusy(true)
         bindAt = SystemClock.elapsedRealtime()
         val c = object : ServiceConnection {
@@ -176,7 +220,7 @@ class SpikeController(
         val mode = job?.getString(LokProtocol.KEY_MODE)
         if (mode == LokProtocol.MODE_BENCH) {
             restarts++
-            if (restarts > 12) {
+            if (restarts > 40) {
                 log("engine process died too many times, giving up")
                 finish()
             } else {
@@ -250,6 +294,8 @@ class SpikeController(
 
     private fun finish() {
         active = false
+        main.removeCallbacks(tick)
+        onLive("")
         onBusy(false)
         onFinished()
     }
@@ -265,5 +311,10 @@ class SpikeController(
         } catch (e: Exception) {
             // logging must never break the run
         }
+    }
+
+    companion object {
+        /** One engine step (load, one tile pass, one export...) longer than this is treated as a hang. */
+        const val STEP_TIMEOUT_S = 120L
     }
 }

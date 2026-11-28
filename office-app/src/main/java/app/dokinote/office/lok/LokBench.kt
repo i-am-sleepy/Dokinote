@@ -249,9 +249,16 @@ class LokBench(
             }
             val p = try { JSONObject(partialFile.readText()) } catch (e: Exception) { JSONObject() }
             p.put("doc", name)
-            p.put("status", "CRASH")
+            val wd = File(outDir, "watchdog.txt")
+            if (wd.exists()) {
+                p.put("status", "HANG")
+                p.put("watchdog", wd.readText().trim())
+                wd.delete()
+            } else {
+                p.put("status", "CRASH")
+            }
             resultsFile.appendText(p.toString() + "\n")
-            log("recovered: $name crashed the engine at step '${p.optString("lastStep")}'")
+            log("recovered: $name -> ${p.optString("status")} at step '${p.optString("lastStep")}'")
         }
         val done = HashSet<String>()
         if (resultsFile.exists()) {

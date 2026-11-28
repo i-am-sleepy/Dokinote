@@ -15,7 +15,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 1
-        versionName = "0.0.4-office-p0-unpack"
+        versionName = "0.0.5-office-p0-watchdog"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
