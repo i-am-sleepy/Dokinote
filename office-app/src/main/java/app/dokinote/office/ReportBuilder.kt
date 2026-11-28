@@ -248,6 +248,17 @@ object ReportBuilder {
                 if (w.has("error")) sb.append(" ERR ${w.optString("error")}")
                 sb.append("\n")
             }
+            val ty = o.optJSONObject("typing")
+            if (ty != null) {
+                sb.append("  typing (30 keys, 40 ms apart): missed ${ty.optInt("missed")} | key post ${st(ty.optJSONObject("post_ms"))}\n")
+                sb.append("    key -> invalidate callback: ${st(ty.optJSONObject("to_invalidate_ms"))}\n")
+                sb.append("    key -> invalidated tile painted: ${st(ty.optJSONObject("to_tile_ms"))}")
+                if (ty.has("sample_payload")) sb.append("  | first payload: ${ty.optString("sample_payload")}")
+                if (ty.has("error")) sb.append("  ERR ${ty.optString("error")}")
+                sb.append("\n")
+            }
+            val smp = o.optJSONObject("cb_samples")
+            if (smp != null && smp.length() > 0) sb.append("  callback payload samples: $smp\n")
             val cb = o.optJSONObject("callbacks")
             if (cb != null && cb.length() > 0) sb.append("  callbacks (type:count) $cb\n")
         }

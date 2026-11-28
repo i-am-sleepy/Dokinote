@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.os.Debug
 import android.os.Process
 import android.os.SystemClock
+import org.json.JSONArray
 import org.json.JSONObject
 import org.libreoffice.kit.DirectBufferAllocator
 import org.libreoffice.kit.Document
@@ -16,6 +17,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.ceil
 import kotlin.math.max
@@ -53,8 +56,23 @@ class LokBench(
     private val tileBuf: ByteBuffer = DirectBufferAllocator.allocate(256 * 256 * 4)
     private var bigBuf: ByteBuffer = DirectBufferAllocator.allocate(screenW * screenH * 4)
 
-    private val officeCb = Office.MessageCallback { signal, _ -> count(signal) }
-    private val docCb = Document.MessageCallback { signal, _ -> count(signal) }
+    private val officeCb = Office.MessageCallback { signal, payload -> onCb(signal, payload) }
+    private val docCb = Document.MessageCallback { signal, payload -> onCb(signal, payload) }
+
+    /** Arrival time (nanoTime) and payload of every CALLBACK_INVALIDATE_TILES, for the typing probe. */
+    private val invalidations = LinkedBlockingQueue<Pair<Long, String>>()
+    private val samples = ConcurrentHashMap<Int, ArrayList<String>>()
+    private val sampleSignals = setOf(0, 1, 2, 5, 13)
+    private val rectRe = Regex("(-?\\d+)\\s*,\\s*(-?\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)")
+
+    private fun onCb(signal: Int, payload: String?) {
+        count(signal)
+        if (signal == Document.CALLBACK_INVALIDATE_TILES) invalidations.offer(Pair(System.nanoTime(), payload ?: ""))
+        if (signal in sampleSignals) {
+            val l = samples.getOrPut(signal) { ArrayList() }
+            synchronized(l) { if (l.size < 3) l.add((payload ?: "").take(100)) }
+        }
+    }
 
     private fun count(signal: Int) {
         callbackCounts.getOrPut(signal) { AtomicInteger() }.incrementAndGet()
@@ -312,6 +330,7 @@ class LokBench(
         r.put("bytes", f.length())
         inProgress.writeText(name)
         callbackCounts.clear()
+        samples.clear()
 
         fun step(s: String) {
             r.put("lastStep", s)
@@ -367,6 +386,7 @@ class LokBench(
             r.put("pss_after_export_kb", pssKb())
 
             if (type == Document.DOCTYPE_TEXT) webLayoutProbe(doc, name, r, ::step)
+            if (type == Document.DOCTYPE_TEXT) typingProbe(doc, r, ::step)
 
             step("destroy")
             val tD = now()
@@ -386,6 +406,9 @@ class LokBench(
         val cb = JSONObject()
         for ((k, v) in callbackCounts) cb.put(k.toString(), v.get())
         r.put("callbacks", cb)
+        val sm = JSONObject()
+        for ((k, v) in samples) synchronized(v) { sm.put(k.toString(), JSONArray(v)) }
+        r.put("cb_samples", sm)
         r.remove("lastStep")
         File(ctx.cacheDir, "repaired").deleteRecursively()
         resultsFile.appendText(r.toString() + "\n")
@@ -502,6 +525,61 @@ class LokBench(
             w.put("error", t.toString())
         }
         r.put("web_layout", w)
+    }
+
+    /**
+     * Typing latency (P0 item): click into the first page, then type 30 characters 40 ms apart. For each key we measure
+     * post -> first CALLBACK_INVALIDATE_TILES, and post -> the tile that contains the invalidated rectangle painted.
+     * Runs last, because it modifies the in-memory document (nothing is saved).
+     */
+    private fun typingProbe(doc: Document, r: JSONObject, step: (String) -> Unit) {
+        val o = JSONObject()
+        try {
+            val docW = doc.getDocumentWidth()
+            val tw = max(1, (256.0 * docW / screenW).toInt())
+            step("typing-click")
+            doc.setClientZoom(256, 256, tw, tw)
+            val x = (docW / 5).toInt()
+            val y = 3000
+            doc.postMouseEvent(Document.MOUSE_EVENT_BUTTON_DOWN, x, y, 1, Document.MOUSE_BUTTON_LEFT, Document.KEYBOARD_MODIFIER_NONE)
+            doc.postMouseEvent(Document.MOUSE_EVENT_BUTTON_UP, x, y, 1, Document.MOUSE_BUTTON_LEFT, Document.KEYBOARD_MODIFIER_NONE)
+            Thread.sleep(400)
+            val post = ArrayList<Double>()
+            val toInval = ArrayList<Double>()
+            val toTile = ArrayList<Double>()
+            var missed = 0
+            for (i in 0 until 30) {
+                step("typing-key$i")
+                invalidations.clear()
+                val ch = 'a'.code + (i % 26)
+                val t = now()
+                doc.postKeyEvent(Document.KEY_EVENT_PRESS, ch, 0)
+                doc.postKeyEvent(Document.KEY_EVENT_RELEASE, ch, 0)
+                post.add(msSince(t))
+                val arrived = invalidations.poll(1500, TimeUnit.MILLISECONDS)
+                if (arrived == null) {
+                    missed++
+                    continue
+                }
+                toInval.add((arrived.first - t) / 1_000_000.0)
+                val m = rectRe.find(arrived.second)
+                val rx = m?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                val ry = m?.groupValues?.get(2)?.toIntOrNull() ?: 0
+                tileBuf.clear()
+                doc.paintTile(tileBuf, 256, 256, max(0, rx / tw) * tw, max(0, ry / tw) * tw, tw, tw)
+                toTile.add(msSince(t))
+                if (i == 0) o.put("sample_payload", arrived.second.take(100))
+                Thread.sleep(40)
+            }
+            o.put("n", 30)
+            o.put("missed", missed)
+            o.put("post_ms", stats(post))
+            o.put("to_invalidate_ms", stats(toInval))
+            o.put("to_tile_ms", stats(toTile))
+        } catch (t: Throwable) {
+            o.put("error", t.toString())
+        }
+        r.put("typing", o)
     }
 
     // ---------------------------------------------------------------- Impress-like documents (slides)

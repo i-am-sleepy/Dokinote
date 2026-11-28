@@ -15,7 +15,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 1
-        versionName = "0.0.6-office-p0-preflight"
+        versionName = "0.0.7-office-p0-typing"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
